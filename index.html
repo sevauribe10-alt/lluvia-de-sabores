@@ -261,7 +261,7 @@ datalist{}
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
 
-.export-row{display:flex;justify-content:flex-end;margin-bottom:10px;}
+.export-row{display:flex;justify-content:flex-end;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
 .export-btn{
   border:1.5px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;
   font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;font-family:inherit;
@@ -382,6 +382,8 @@ datalist{}
   <!-- HISTORIAL -->
   <div class="panel" id="panel-historial">
     <div class="export-row">
+      <button class="export-btn" id="importBtn">⬆ Importar CSV</button>
+      <input type="file" id="importFile" accept=".csv,text/csv" style="display:none;">
       <button class="export-btn" id="exportBtn">⬇ Exportar CSV</button>
     </div>
     <div class="hist-filters">
@@ -925,6 +927,107 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
   a.href = url; a.download = `lluvia-de-sabores-transacciones-${todayStr()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+});
+
+/* ---------- CSV import ---------- */
+function parseCSVLine(line){
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for(let i=0;i<line.length;i++){
+    const ch = line[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(line[i+1] === '"'){ cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += ch;
+    } else {
+      if(ch === '"') inQuotes = true;
+      else if(ch === ','){ out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseCSV(text){
+  const lines = text.split(/\r\n|\n|\r/).filter(l=>l.trim().length>0);
+  if(lines.length < 2) return [];
+  const rows = lines.slice(1); // skip header
+  return rows.map(parseCSVLine).filter(cols=>cols.length>=6);
+}
+
+function recordFingerprint(r){
+  return [r.fecha, r.type, r.contraparte, r.categoria, r.metodo, r.monto, r.notas].join('|').toLowerCase();
+}
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('importFile').click();
+});
+
+document.getElementById('importFile').addEventListener('change', async e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const text = await file.text();
+  let cols;
+  try{
+    cols = parseCSV(text);
+  }catch(err){
+    showToast('No se pudo leer el archivo. Verifica que sea el CSV exportado.');
+    e.target.value = '';
+    return;
+  }
+  if(cols.length === 0){
+    showToast('El archivo no tiene registros para importar.');
+    e.target.value = '';
+    return;
+  }
+
+  const existingFingerprints = new Set(DATA.map(recordFingerprint));
+  let added = 0, skipped = 0, invalid = 0;
+
+  cols.forEach(c=>{
+    const [fecha, tipoTxt, contraparte, categoria, metodo, montoTxt, notas] = c;
+    const type = (tipoTxt||'').trim().toLowerCase() === 'venta' ? 'venta'
+               : (tipoTxt||'').trim().toLowerCase() === 'gasto' ? 'gasto' : null;
+    const monto = parseInt(String(montoTxt).replace(/[^\d-]/g,''));
+    const metodoNorm = (metodo||'').trim().toLowerCase();
+    const isValidMetodo = metodoNorm === 'efectivo' || metodoNorm === 'transferencia';
+    const isValidFecha = /^\d{4}-\d{2}-\d{2}$/.test((fecha||'').trim());
+
+    if(!type || !monto || !isValidMetodo || !isValidFecha){
+      invalid++;
+      return;
+    }
+    const record = {
+      fecha: fecha.trim(),
+      type,
+      contraparte: (contraparte||'').trim() || (type==='venta' ? 'Cliente general' : 'Proveedor sin nombre'),
+      categoria: (categoria||'').trim() || (type==='venta' ? 'Mostrador' : 'Otro'),
+      metodo: metodoNorm,
+      monto,
+      notas: (notas||'').trim()
+    };
+    const fp = recordFingerprint(record);
+    if(existingFingerprints.has(fp)){
+      skipped++;
+      return;
+    }
+    record.id = crypto.randomUUID();
+    DATA.push(record);
+    existingFingerprints.add(fp);
+    added++;
+  });
+
+  await saveData();
+  renderAll();
+
+  let msg = `${added} registro${added===1?'':'s'} importado${added===1?'':'s'}`;
+  if(skipped) msg += `, ${skipped} duplicado${skipped===1?'':'s'} omitido${skipped===1?'':'s'}`;
+  if(invalid) msg += `, ${invalid} inválido${invalid===1?'':'s'}`;
+  showToast(msg);
+  e.target.value = '';
 });
 
 /* ---------- Init ---------- */
