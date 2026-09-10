@@ -1,0 +1,15 @@
+{
+  "name": "Lluvia de Sabores - Panel de ventas y gastos",
+  "short_name": "Lluvia Panel",
+  "description": "Registro de ventas y gastos con informes dinámicos para Heladería Lluvia de Sabores",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF7EA",
+  "theme_color": "#D6336C",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
