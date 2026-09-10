@@ -1,6 +1,6 @@
 {
-  "name": "Lluvia de Sabores - Panel de ventas y gastos",
-  "short_name": "Lluvia Panel",
+  "name": "Lluvia de Sabores",
+  "short_name": "Lluvia de Sabores",
   "description": "Registro de ventas y gastos con informes dinámicos para Heladería Lluvia de Sabores",
   "start_url": "./index.html",
   "scope": "./",
