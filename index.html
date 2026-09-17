@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Lluvia Panel">
+<meta name="apple-mobile-web-app-title" content="Lluvia de Sabores">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Lluvia de Sabores · Panel financiero</title>
@@ -75,6 +75,11 @@ header.top{
 }
 .period-picker button.active{background:var(--ink);color:var(--cream);}
 .period-picker button:hover:not(.active){background:var(--cream-deep);}
+.period-day-input{
+  display:none;border:none;background:var(--cream-deep);border-radius:10px;padding:8px 10px;
+  font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);margin-left:2px;
+}
+.period-day-input.show{display:inline-block;}
 
 /* ---------- Hero ---------- */
 .hero{
@@ -186,6 +191,22 @@ header.top{
 }
 .qa-btn:hover{background:var(--cream-deep);}
 
+/* ---------- Day nav ---------- */
+.day-nav{display:flex;align-items:center;gap:10px;margin-bottom:18px;}
+.day-nav-btn{
+  width:40px;height:40px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);
+  font-size:19px;font-weight:700;color:var(--ink);cursor:pointer;flex-shrink:0;
+}
+.day-nav-btn:hover{background:var(--cream-deep);}
+.day-nav input[type=date]{
+  flex:1;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;
+  font-size:14.5px;background:var(--card);color:var(--ink);font-weight:600;
+}
+.day-today-btn{
+  border:none;background:var(--ink);color:var(--cream);padding:10px 16px;border-radius:12px;
+  font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;flex-shrink:0;
+}
+
 /* ---------- Table (historial) ---------- */
 .hist-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
 .hist-filters select, .hist-filters input{
@@ -290,7 +311,9 @@ datalist{}
       <button data-period="hoy" class="active">Hoy</button>
       <button data-period="semana">Semana</button>
       <button data-period="mes">Mes</button>
+      <button data-period="dia">Día</button>
       <button data-period="todo">Todo</button>
+      <input type="date" id="periodDayPicker" class="period-day-input">
     </div>
   </header>
 
@@ -317,6 +340,7 @@ datalist{}
 
   <div class="tabs" id="tabs">
     <button class="tab-btn active" data-tab="resumen">Resumen</button>
+    <button class="tab-btn" data-tab="dia">Por día</button>
     <button class="tab-btn" data-tab="metodos">Métodos de pago</button>
     <button class="tab-btn" data-tab="partners">Clientes y proveedores</button>
     <button class="tab-btn" data-tab="categorias">Categorías</button>
@@ -337,8 +361,39 @@ datalist{}
     </div>
   </div>
 
+  <!-- POR DIA -->
+  <div class="panel" id="panel-dia">
+    <div class="day-nav">
+      <button class="day-nav-btn" id="dayPrev" aria-label="Día anterior">‹</button>
+      <input type="date" id="dayPicker">
+      <button class="day-nav-btn" id="dayNext" aria-label="Día siguiente">›</button>
+      <button class="day-today-btn" id="dayToday">Hoy</button>
+    </div>
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px;">
+      <div class="kpi venta"><p>Ventas del día</p><strong id="diaVentas">$ 0</strong></div>
+      <div class="kpi gasto"><p>Gastos del día</p><strong id="diaGastos">$ 0</strong></div>
+      <div class="kpi balance"><p>Balance del día</p><strong id="diaBalance">$ 0</strong></div>
+    </div>
+    <div class="card" style="padding:0;overflow-x:auto;">
+      <table id="diaTable">
+        <thead>
+          <tr><th>Tipo</th><th>Contraparte</th><th>Categoría</th><th>Método</th><th>Monto</th><th></th></tr>
+        </thead>
+        <tbody id="diaBody"></tbody>
+      </table>
+      <div id="diaEmpty" class="empty" style="display:none;"><div class="em">📅</div>Sin movimientos este día.</div>
+    </div>
+  </div>
+
   <!-- METODOS DE PAGO -->
   <div class="panel" id="panel-metodos">
+    <div class="card" style="margin-bottom:16px;">
+      <h3>Balance por método de pago (ventas − gastos)</h3>
+      <div class="kpis" style="grid-template-columns:repeat(2,1fr);margin-bottom:0;">
+        <div class="kpi"><p>💵 Efectivo</p><strong id="balEfectivo" style="color:var(--mango);">$ 0</strong></div>
+        <div class="kpi"><p>📲 Transferencia</p><strong id="balTransferencia" style="color:var(--coco);">$ 0</strong></div>
+      </div>
+    </div>
     <div class="grid2">
       <div class="card">
         <h3>Ventas por método de pago</h3>
@@ -516,6 +571,7 @@ datalist{}
 const STORAGE_KEY = 'lluvia-transactions';
 let DATA = []; // array of {id,type,monto,fecha,metodo,contraparte,categoria,notas}
 let currentPeriod = 'hoy';
+let dayViewDate = todayStr();
 const fmt = n => '$ ' + Math.round(n).toLocaleString('es-CO');
 
 /* ---------- Storage (localStorage del navegador del celular/PC) ---------- */
@@ -690,10 +746,31 @@ document.getElementById('periodPicker').addEventListener('click', e=>{
   document.querySelectorAll('#periodPicker button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   currentPeriod = btn.dataset.period;
+  const dayInput = document.getElementById('periodDayPicker');
+  if(currentPeriod === 'dia'){
+    dayInput.classList.add('show');
+    dayInput.value = dayViewDate;
+  } else {
+    dayInput.classList.remove('show');
+  }
   renderAll();
+});
+document.getElementById('periodDayPicker').addEventListener('change', e=>{
+  if(e.target.value){
+    dayViewDate = e.target.value;
+    renderAll();
+  }
 });
 
 /* ---------- Filtering by period ---------- */
+function startOfWeekMonday(d){
+  const date = new Date(d);
+  const day = date.getDay(); // 0=domingo,1=lunes,...
+  const diff = (day === 0 ? -6 : 1 - day); // días para retroceder hasta el lunes
+  date.setDate(date.getDate() + diff);
+  date.setHours(0,0,0,0);
+  return date;
+}
 function inPeriod(fecha){
   if(currentPeriod === 'todo') return true;
   const d = new Date(fecha+'T00:00:00');
@@ -702,11 +779,15 @@ function inPeriod(fecha){
     return fecha === todayStr();
   }
   if(currentPeriod === 'semana'){
-    const start = new Date(now); start.setDate(now.getDate()-6); start.setHours(0,0,0,0);
-    return d >= start && d <= now;
+    const start = startOfWeekMonday(now);
+    const end = new Date(start); end.setDate(start.getDate()+6); end.setHours(23,59,59,999);
+    return d >= start && d <= end;
   }
   if(currentPeriod === 'mes'){
     return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+  }
+  if(currentPeriod === 'dia'){
+    return fecha === dayViewDate;
   }
   return true;
 }
@@ -716,6 +797,7 @@ function renderAll(){
   const filtered = DATA.filter(r=>inPeriod(r.fecha));
   renderHero(filtered);
   renderResumen(filtered);
+  renderDia();
   renderMetodos(filtered);
   renderPartners(filtered);
   renderCategorias(filtered);
@@ -813,13 +895,25 @@ function drawDonut(containerId, segments){
 function renderMetodos(filtered){
   const ventas = filtered.filter(r=>r.type==='venta');
   const gastos = filtered.filter(r=>r.type==='gasto');
+  const vEf = sum(ventas.filter(r=>r.metodo==='efectivo'));
+  const vTr = sum(ventas.filter(r=>r.metodo==='transferencia'));
+  const gEf = sum(gastos.filter(r=>r.metodo==='efectivo'));
+  const gTr = sum(gastos.filter(r=>r.metodo==='transferencia'));
+  const balEf = vEf - gEf;
+  const balTr = vTr - gTr;
+  const elEf = document.getElementById('balEfectivo');
+  const elTr = document.getElementById('balTransferencia');
+  elEf.textContent = fmt(balEf);
+  elEf.style.color = balEf < 0 ? 'var(--corozo)' : 'var(--mango)';
+  elTr.textContent = fmt(balTr);
+  elTr.style.color = balTr < 0 ? 'var(--corozo)' : 'var(--coco)';
   drawDonut('donutVentas', [
-    {label:'Efectivo', value: sum(ventas.filter(r=>r.metodo==='efectivo')), color:'var(--mango)'.startsWith('var')?'#96B822':'#96B822'},
-    {label:'Transferencia', value: sum(ventas.filter(r=>r.metodo==='transferencia')), color:'#1E93A6'}
+    {label:'Efectivo', value: vEf, color:'#96B822'},
+    {label:'Transferencia', value: vTr, color:'#1E93A6'}
   ]);
   drawDonut('donutGastos', [
-    {label:'Efectivo', value: sum(gastos.filter(r=>r.metodo==='efectivo')), color:'#96B822'},
-    {label:'Transferencia', value: sum(gastos.filter(r=>r.metodo==='transferencia')), color:'#1E93A6'}
+    {label:'Efectivo', value: gEf, color:'#96B822'},
+    {label:'Transferencia', value: gTr, color:'#1E93A6'}
   ]);
 }
 
@@ -900,6 +994,67 @@ document.getElementById('histBody').addEventListener('click', async e=>{
   await saveData();
   showToast('Registro eliminado');
   renderAll();
+});
+
+/* ---------- Por día ---------- */
+function renderDia(){
+  document.getElementById('dayPicker').value = dayViewDate;
+  const dayInput = document.getElementById('periodDayPicker');
+  if(dayInput) dayInput.value = dayViewDate;
+  const rows = DATA.filter(r=>r.fecha === dayViewDate).sort((a,b)=> (a.id||'').localeCompare(b.id||''));
+  const ventas = rows.filter(r=>r.type==='venta');
+  const gastos = rows.filter(r=>r.type==='gasto');
+  const tv = sum(ventas), tg = sum(gastos);
+  document.getElementById('diaVentas').textContent = fmt(tv);
+  document.getElementById('diaGastos').textContent = fmt(tg);
+  const balEl = document.getElementById('diaBalance');
+  balEl.textContent = fmt(tv-tg);
+
+  const body = document.getElementById('diaBody');
+  const emptyEl = document.getElementById('diaEmpty');
+  if(rows.length===0){
+    body.innerHTML = '';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  body.innerHTML = rows.map(r=>`
+    <tr>
+      <td><span class="tag ${r.type}">${r.type==='venta'?'Venta':'Gasto'}</span></td>
+      <td>${r.contraparte}${r.notas?`<div style="font-size:11.5px;color:var(--ink-soft);">${r.notas}</div>`:''}</td>
+      <td>${r.categoria||'—'}</td>
+      <td class="pm">${r.metodo==='efectivo'?'💵 Efectivo':'📲 Transferencia'}</td>
+      <td class="amt ${r.type}">${r.type==='venta'?'+':'-'}${fmt(r.monto)}</td>
+      <td><button class="del-btn" data-id="${r.id}" title="Eliminar">🗑</button></td>
+    </tr>`).join('');
+}
+
+document.getElementById('diaBody').addEventListener('click', async e=>{
+  const btn = e.target.closest('.del-btn');
+  if(!btn) return;
+  DATA = DATA.filter(r=>r.id !== btn.dataset.id);
+  await saveData();
+  showToast('Registro eliminado');
+  renderAll();
+});
+
+function shiftDay(delta){
+  const d = new Date(dayViewDate+'T00:00:00');
+  d.setDate(d.getDate()+delta);
+  dayViewDate = d.toISOString().slice(0,10);
+  if(currentPeriod === 'dia') renderAll(); else renderDia();
+}
+document.getElementById('dayPrev').addEventListener('click', ()=>shiftDay(-1));
+document.getElementById('dayNext').addEventListener('click', ()=>shiftDay(1));
+document.getElementById('dayToday').addEventListener('click', ()=>{
+  dayViewDate = todayStr();
+  if(currentPeriod === 'dia') renderAll(); else renderDia();
+});
+document.getElementById('dayPicker').addEventListener('change', e=>{
+  if(e.target.value){
+    dayViewDate = e.target.value;
+    if(currentPeriod === 'dia') renderAll(); else renderDia();
+  }
 });
 
 ['fType','fMethod','fSearch'].forEach(id=>{
